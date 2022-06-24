@@ -18,7 +18,7 @@ requests
 requests-toolbelt
 sniffio==1.2.0
 starlette==0.19.1
-typing-extensions==4.2.0
+typing-extensions
 urllib3==1.26.9
 uvicorn==0.17.6
 watchgod==0.8.2
