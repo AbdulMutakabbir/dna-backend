@@ -1,0 +1,13 @@
+version: "3"
+
+services:
+
+  web:
+    build: .
+    restart: always
+    image: dna-backend
+    container_name: dna-backend
+    volumes:
+      - .:/code
+    ports:
+      - "8000:8000"

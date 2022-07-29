@@ -3,15 +3,6 @@ import re
 # import sys
 import json
 from utils.config import SKIP_DESTINATION_ETHERNET_TYPES, SKIP_LINES
-# # exporting project
-# sys.path.append(os.pardir)
-# from src.dnac_config import *
-
-
-# source_path = os.pardir + os.sep + "source-switch-config.txt"
-# destination_path = os.pardir + os.sep + "destination-switch-config.txt"
-# updated_destiantion_path = os.pardir + os.sep + "updated-destination-switch-config.txt"
-# destiantion_source_mapping_path = os.pardir + os.sep + "destination-source-mapping-switch-config.txt"
 
 
 def get_config_line_number_range(lines, init_index, stop_pattern = "!"):
@@ -50,7 +41,82 @@ def get_all_config_meta_data(lines):
                 
     return config_ranges
 
-def get_all_configs(data):
+def get_all_configs(data, skip_port_list=[], selected_port_list=[]):
+    configs = []
+
+    groups = []
+
+    
+    line_data = data.split("\n")
+    
+    config_meta = get_all_config_meta_data(line_data)
+    
+    for meta_data in config_meta:
+
+        port_name = get_port_name(meta_data['ethernet_type'],
+                                    meta_data['slot'],
+                                    meta_data['sub_slot'],
+                                    meta_data['port'])
+
+        group = get_group_name(meta_data['ethernet_type'],
+                                meta_data['slot'],
+                                meta_data['sub_slot'])
+        
+        config = "\n".join(line_data[meta_data['start_index']:meta_data['end_index']])
+
+        description = ""
+        description_pattern = re.compile(r"description\s(.*)\n")
+        description_match = description_pattern.search(config)
+        if description_match is not None:
+            description = description_match.group(1)
+        
+        if group in groups:
+            for config_info in configs:
+                if config_info['label'] == group:
+                    config_info['children'].append(
+                        {
+                            'label': port_name,
+                            'value': config,
+                            'checked': True if (meta_data['ethernet_type'] not in skip_port_list) and (port_name in selected_port_list) else False,
+                            'title': description,
+                        }
+                    )
+                    break
+        else:
+            groups.append(group)
+            configs.append(
+                {
+                    'label': group,
+                    'value': group,
+                    'checked': True,
+                    'title': group,
+                    'children': [
+                        {
+                            'label': port_name,
+                            'value': config,
+                            'checked': True if (meta_data['ethernet_type'] not in skip_port_list) and (port_name in selected_port_list) else False,
+                            'title': description,
+                        }
+                    ]
+                }
+            )
+
+    # check parent also all childeren are checked
+    for port_group in configs:
+        for port in port_group['children']:
+            if not port['checked']:
+                port_group['checked'] = False
+                break
+
+    return configs
+
+def get_port_name(ethernet_type:str,slot:int,sub_slot:int,port:int):
+    return f"{ethernet_type}{slot}/{sub_slot}/{port}"
+
+def get_group_name(ethernet_type:str,slot:int,sub_slot:int):
+    return f"{ethernet_type}{slot}/{sub_slot}"
+
+def get_all_configs_meta(data):
     configs = []
     
     line_data = data.split("\n")
@@ -64,12 +130,9 @@ def get_all_configs(data):
         
     return configs
 
-def get_port_name(ethernet_type:str,slot:int,sub_slot:int,port:int):
-    return f"{ethernet_type}{slot}/{sub_slot}/{port}"
-
-def get_updated_destination_config(source_data, destination_data):
-    source_configs = get_all_configs(source_data)
-    destination_configs = get_all_configs(destination_data)
+def get_updated_destination_config(source_data, destination_data, selected_source_ports, selected_destination_ports):
+    source_configs = get_all_configs_meta(source_data)
+    destination_configs = get_all_configs_meta(destination_data)
 
     new_destination_config = []
     destination_config = destination_data.split("\n")
@@ -96,9 +159,10 @@ def get_updated_destination_config(source_data, destination_data):
                                                 config_info['port'])
         update_mapping[destiantion_port_name] = source_update_info
 
-        # skip if the destionation ehternet type in skip list
+        # skip if the destionation port not in selceted list 
         # skip if destination port is an uplink port
-        if (config_info['ethernet_type'] in SKIP_DESTINATION_ETHERNET_TYPES) or (any(string in config_info['config'] for string in SKIP_LINES)):
+        # if (config_info['ethernet_type'] in SKIP_DESTINATION_ETHERNET_TYPES) or (any(string in config_info['config'] for string in SKIP_LINES)):
+        if (destiantion_port_name not in selected_destination_ports) or (any(string in config_info['config'] for string in SKIP_LINES)):
             new_destination_config.append(config_info['config'])
             continue
 
@@ -114,9 +178,10 @@ def get_updated_destination_config(source_data, destination_data):
                                                        source_config['sub_slot'],
                                                        source_config['port'])
 
-                    # skip if source port in skip list
+                    # skip if source port not in selected list 
                     # skip if source port is uplink port
-                    if(any(string in source_config['config'] for string in SKIP_LINES)):
+                    # if(any(string in source_config['config'] for string in SKIP_LINES)):
+                    if(source_update_info not in selected_source_ports) or (any(string in source_config['config'] for string in SKIP_LINES)):
                         update_mapping["skip_source_ports"].append(source_update_info)
                         continue
 
